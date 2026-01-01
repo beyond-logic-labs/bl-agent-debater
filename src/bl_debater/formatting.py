@@ -28,6 +28,10 @@ def print_info(text: str):
     """Print info message."""
     print(f"{CYAN}{text}{RESET}")
 
+def print_warning(text: str):
+    """Print warning message."""
+    print(f"{YELLOW}{BOLD}Warning: {text}{RESET}")
+
 def print_waiting(text: str):
     """Print waiting message."""
     print(f"{DIM}{text}{RESET}", end="\r")

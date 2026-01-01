@@ -141,16 +141,60 @@ pip install -e .
 | Command | Description |
 |---------|-------------|
 | `bl-debater start <name> -p "..." --as <role> --vs <role>` | Create debate |
-| `bl-debater start ... --watch` | Create and immediately watch |
+| `bl-debater start ... --context <file-or-url>` | Include context (repeatable) |
+| `bl-debater respond <name> --as <role> --template` | Respond with $EDITOR |
 | `bl-debater join <name> --as <role>` | Join existing debate |
 | `bl-debater wait <name> --as <role>` | Wait for your turn |
 | `bl-debater watch <name>` | **Live terminal UI** |
-| `bl-debater timeout <name> --as <role>` | End unresponsive debate |
+| `bl-debater export <name> --format github-comment` | Export synthesis |
 | `bl-debater status <name>` | Check debate status |
 | `bl-debater list` | List all debates |
 | `bl-debater roles` | Show available roles |
 
+### Debates Directory
+
+`--debates-dir` is a global option and must come before the subcommand:
+
+```bash
+bl-debater --debates-dir /path/to/debates join auth --as architect
+```
+
+Tip: run `bl-debater status <name>` first to confirm participants and whose turn it is.
+
+### Context Injection
+
+Include file content or URLs directly in the problem statement:
+
+```bash
+bl-debater start pr-review -p "Review this PR" \
+  --as claude --vs codex \
+  --context docs/adr/0004.md \
+  --context https://github.com/org/repo/pull/7.diff
+```
+
+### Editor Integration
+
+Use your `$EDITOR` to write responses with pre-filled templates:
+
+```bash
+bl-debater respond auth --as architect --template
+```
+
+The template includes the correct round header, sections, and validation on save.
+
+### Export Synthesis
+
+Export completed debate synthesis for use elsewhere:
+
+```bash
+bl-debater export auth --format github-comment   # For PR comments
+bl-debater export auth --format json             # For automation
+bl-debater export auth --format markdown -o REVIEW.md
+```
+
 ## Roles
+
+Built-in roles (Markdown and YAML formats supported):
 
 | Role | Focus |
 |------|-------|
@@ -164,13 +208,42 @@ pip install -e .
 | `analyzer` | Requirements, trade-offs |
 | `mobile` | iOS/Android, offline-first |
 
+### Custom Roles (YAML)
+
+Create custom roles with rich metadata:
+
+```yaml
+# roles/security-reviewer.yaml
+name: security-reviewer
+description: OWASP-focused security specialist
+
+expertise:
+  - OWASP Top 10
+  - Authentication/Authorization
+  - Secrets management
+
+evaluation_criteria:
+  - Does the code handle untrusted input safely?
+  - Are secrets properly managed?
+
+style: Direct and thorough
+consensus_weight: 1.0
+```
+
+Role lookup paths (in priority order):
+1. `./roles/` — Project-specific roles
+2. `~/.bl-debater/roles/` — User global roles
+3. Package bundled roles
+
 ## Options
 
 | Flag | Default | Description |
 |------|---------|-------------|
 | `--agreement` | 80 | Consensus threshold % |
 | `--debates-dir` | `./debates` | Debate files directory |
-| `--timeout` | 600 | Wait timeout (seconds) |
+| `--timeout` | 60 | Wait timeout (seconds) |
+| `--context` | - | Include file or URL content (repeatable) |
+| `--format` | `github-comment` | Export format (github-comment, markdown, json) |
 
 ## Protocol
 

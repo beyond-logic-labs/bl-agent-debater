@@ -3,10 +3,12 @@
 bl-debater CLI - Coordinate structured debates between any AI agents.
 
 Usage:
-    bl-debater start <name> -p "prompt" --as <role> --vs <role>
+    bl-debater start <name> -p "prompt" --as <role> --vs <role> [--context file.md] [--context url]
+    bl-debater respond <name> --as <role> [--template]
     bl-debater join <name> --as <role>
     bl-debater wait <name> --as <role>
     bl-debater watch <name>              # Live terminal UI
+    bl-debater export <name> --format github-comment
     bl-debater status <name>
     bl-debater list
     bl-debater roles
@@ -16,20 +18,115 @@ import argparse
 import sys
 from pathlib import Path
 
-from .debate import DebateManager
-from .formatting import print_error, print_success, print_info, print_header
+from .debate import DebateManager, load_role_definition, get_roles_dirs_for_creation
+from .formatting import print_error, print_success, print_info, print_header, print_warning
+
+
+def _validate_role(role: str) -> bool:
+    """Check if a role definition exists. Returns True if valid."""
+    return load_role_definition(role) is not None
+
+
+def _prompt_create_role(role: str) -> bool:
+    """Prompt user to create a missing role definition. Returns True if created."""
+    print_warning(f"Role '{role}' is not defined.")
+    print_info("Roles must have a definition file. Would you like to create one?")
+    print()
+
+    try:
+        response = input(f"Create {role}.md? [y/N]: ").strip().lower()
+        if response != 'y':
+            return False
+
+        # Gather role info interactively
+        print()
+        print_info("Enter role details (press Enter for empty):")
+        print()
+
+        description = input("Description (1 line): ").strip() or f"Expert in {role}"
+
+        print("Expertise (one per line, empty line to finish):")
+        expertise = []
+        while True:
+            item = input("  - ").strip()
+            if not item:
+                break
+            expertise.append(item)
+        if not expertise:
+            expertise = [f"{role} domain knowledge"]
+
+        print("Debate style (one per line, empty line to finish):")
+        style = []
+        while True:
+            item = input("  - ").strip()
+            if not item:
+                break
+            style.append(item)
+        if not style:
+            style = ["Evidence-based argumentation"]
+
+        print("Key principles (one per line, empty line to finish):")
+        principles = []
+        while True:
+            item = input("  - ").strip()
+            if not item:
+                break
+            principles.append(item)
+        if not principles:
+            principles = ["Clarity and precision"]
+
+    except (EOFError, KeyboardInterrupt):
+        print()
+        print_info("Cancelled.")
+        return False
+
+    # Create the role file
+    from .debate import create_role_definition
+    try:
+        role_file = create_role_definition(role, description, expertise, style, principles)
+        print()
+        print_success(f"Created: {role_file}")
+        return True
+    except ValueError as e:
+        print_error(str(e))
+        return False
+    except FileExistsError as e:
+        print_error(str(e))
+        return False
+
 
 def cmd_start(args):
     """Create a new debate."""
     manager = DebateManager(args.debates_dir)
 
+    # Validate roles exist
+    missing_roles = []
+    for role in [args.role, args.vs]:
+        if not _validate_role(role):
+            missing_roles.append(role)
+
+    if missing_roles:
+        print_header("MISSING ROLE DEFINITIONS")
+        print()
+        for role in missing_roles:
+            if not _prompt_create_role(role):
+                print_error(f"Role '{role}' must be defined before starting a debate.")
+                print_info(f"Create: ~/.bl-debater/roles/{role}.md")
+                print_info("Or run: bl-debater roles  (to see available roles)")
+                sys.exit(1)
+        print()
+
     try:
+        # Collect context items
+        context_items = getattr(args, 'context', None) or []
+
         debate_file, instructions = manager.start(
             name=args.name,
             prompt=args.prompt,
             role=args.role,
             opponent_role=args.vs,
-            min_agreement=args.agreement
+            min_agreement=args.agreement,
+            context_items=context_items
         )
 
         print_header("DEBATE CREATED")
@@ -37,6 +134,8 @@ def cmd_start(args):
         print_info(f"You are: {args.role.upper()}")
         print_info(f"Opponent: {args.vs.upper()}")
         print_info(f"Consensus at: {args.agreement}%")
+        if context_items:
+            print_info(f"Context: {len(context_items)} item(s) included")
         print()
         print_success("YOUR TURN!")
         print()
@@ -171,32 +270,108 @@ def cmd_watch(args):
 
 def cmd_roles(args):
     """List available roles."""
-    from .debate import ROLES_DIR
+    from .debate import _get_roles_dirs
 
     print_header("AVAILABLE ROLES")
 
-    if not ROLES_DIR.exists():
+    roles_dirs = _get_roles_dirs()
+    if not roles_dirs:
         print_info("No roles directory found.")
+        print_info("Create roles in: ./roles/, ~/.bl-debater/roles/")
         return
 
-    roles = sorted(ROLES_DIR.glob("*.md"))
+    # Collect roles from all directories
+    roles_found = {}  # name -> (path, type)
 
-    if not roles:
+    for roles_dir in roles_dirs:
+        # Check markdown roles
+        for role_file in sorted(roles_dir.glob("*.md")):
+            role_name = role_file.stem
+            if role_name in roles_found:
+                continue
+            content = role_file.read_text()
+            desc = ""
+            for line in content.split("\n"):
+                line = line.strip()
+                if line and not line.startswith("#"):
+                    desc = line.split(".")[0].replace("**", "").replace("You are a ", "").replace("You are an ", "")[:50]
+                    break
+            roles_found[role_name] = (desc, "md", roles_dir)
+
+        # Check YAML roles (only if yaml is available)
+        try:
+            import yaml
+            for role_file in sorted(roles_dir.glob("*.yaml")):
+                role_name = role_file.stem
+                if role_name in roles_found:
+                    continue
+                try:
+                    data = yaml.safe_load(role_file.read_text())
+                    desc = data.get("description", "")[:50]
+                except:
+                    desc = ""
+                roles_found[role_name] = (desc, "yaml", roles_dir)
+        except ImportError:
+            pass  # YAML not available, skip YAML roles
+
+    if not roles_found:
         print_info("No roles defined.")
         return
 
-    for role_file in roles:
-        role_name = role_file.stem
-        # Read first non-empty, non-heading line as description
-        content = role_file.read_text()
-        desc = ""
-        for line in content.split("\n"):
-            line = line.strip()
-            if line and not line.startswith("#"):
-                # Get first sentence or phrase
-                desc = line.split(".")[0].replace("**", "").replace("You are a ", "").replace("You are an ", "")
-                break
-        print(f"  {role_name:15} {desc}")
+    for role_name in sorted(roles_found.keys()):
+        desc, fmt, path = roles_found[role_name]
+        tag = "[YAML]" if fmt == "yaml" else ""
+        print(f"  {role_name:20} {desc} {tag}")
+
+
+def cmd_respond(args):
+    """Respond to the current turn with editor integration."""
+    manager = DebateManager(args.debates_dir)
+
+    try:
+        if args.template:
+            # Open editor with template
+            print_info(f"Opening editor for {args.name}...")
+            saved = manager.respond_with_editor(args.name, args.role)
+            if saved:
+                print_success("Response saved!")
+                print()
+                print_info("Run the following to wait for opponent:")
+                print(f"  bl-debater wait {args.name} --as {args.role}")
+        else:
+            # Just show the template
+            template, debate_file = manager.get_response_template(args.name, args.role)
+            print_header("RESPONSE TEMPLATE")
+            print_info(f"File: {debate_file}")
+            print()
+            print(template)
+            print()
+            print_info("Copy the above template and add it to the debate file.")
+            print_info("Or run with --template to open in your $EDITOR.")
+
+    except Exception as e:
+        print_error(str(e))
+        sys.exit(1)
+
+
+def cmd_export(args):
+    """Export the final synthesis."""
+    manager = DebateManager(args.debates_dir)
+
+    try:
+        output = manager.export_synthesis(args.name, format=args.format)
+
+        if args.output:
+            # Write to file
+            Path(args.output).write_text(output)
+            print_success(f"Exported to {args.output}")
+        else:
+            # Print to stdout
+            print(output)
+
+    except Exception as e:
+        print_error(str(e))
+        sys.exit(1)
 
 def main():
     parser = argparse.ArgumentParser(
@@ -221,6 +396,8 @@ def main():
     start_parser.add_argument("--vs", required=True, help="Opponent's role")
     start_parser.add_argument("--agreement", type=int, default=80,
                               help="Minimum agreement %% to reach consensus (default: 80)")
+    start_parser.add_argument("-c", "--context", action="append", metavar="PATH_OR_URL",
+                              help="Include file or URL content as context (can be repeated)")
     start_parser.set_defaults(func=cmd_start)
 
     # join command
@@ -233,7 +410,7 @@ def main():
     wait_parser = subparsers.add_parser("wait", help="Wait for your turn")
     wait_parser.add_argument("name", help="Debate name")
     wait_parser.add_argument("--as", dest="role", required=True, help="Your role")
-    wait_parser.add_argument("--timeout", type=int, default=600, help="Timeout in seconds (default: 600)")
+    wait_parser.add_argument("--timeout", type=int, default=60, help="Timeout in seconds (default: 60)")
     wait_parser.set_defaults(func=cmd_wait)
 
     # status command
@@ -255,6 +432,24 @@ def main():
     watch_parser.add_argument("--interval", type=float, default=1.0,
                               help="Poll interval in seconds (default: 1.0)")
     watch_parser.set_defaults(func=cmd_watch)
+
+    # respond command
+    respond_parser = subparsers.add_parser("respond", help="Respond with editor integration")
+    respond_parser.add_argument("name", help="Debate name")
+    respond_parser.add_argument("--as", dest="role", required=True, help="Your role")
+    respond_parser.add_argument("--template", "-t", action="store_true",
+                                help="Open $EDITOR with pre-filled template")
+    respond_parser.set_defaults(func=cmd_respond)
+
+    # export command
+    export_parser = subparsers.add_parser("export", help="Export synthesis from completed debate")
+    export_parser.add_argument("name", help="Debate name")
+    export_parser.add_argument("--format", "-f", default="github-comment",
+                               choices=["github-comment", "markdown", "json"],
+                               help="Output format (default: github-comment)")
+    export_parser.add_argument("--output", "-o", metavar="FILE",
+                               help="Write to file instead of stdout")
+    export_parser.set_defaults(func=cmd_export)
 
     args = parser.parse_args()
     args.func(args)

@@ -16,6 +16,20 @@ bl-debater start <name> -p "<problem statement>" --as <your-role> --vs <opponent
 
 This creates `debates/<name>.md`. You go first.
 
+### Starting with Context
+
+Include relevant files or URLs directly in the debate:
+
+```bash
+bl-debater start pr-review \
+  -p "Review this pull request" \
+  --as claude --vs codex \
+  --context docs/adr/0004.md \
+  --context https://github.com/org/repo/pull/7.diff
+```
+
+The content will be fetched and included in the "Context" section of the debate file.
+
 ### If you're joining a debate
 
 ```bash
@@ -23,6 +37,15 @@ bl-debater join <name> --as <your-role>
 ```
 
 If it's your turn, you'll see instructions. If not, the command will wait until it's your turn.
+
+Note: `--debates-dir` is a global option and must come before the subcommand:
+
+```bash
+bl-debater --debates-dir /path/to/debates join <name> --as <your-role>
+```
+
+Role names may include letters, numbers, underscores, and hyphens; they must match the `Participants` line exactly.
+Quick preflight: `bl-debater status <name>` to confirm participants and whose turn it is.
 
 ## The Debate File
 
@@ -36,6 +59,30 @@ The debate file (`debates/<name>.md`) contains:
 Read the entire file before responding. Understand the problem, your role, and what your opponent has argued.
 
 ## How to Respond
+
+### Using the Editor Integration (Recommended)
+
+The easiest way to respond is with the `respond` command:
+
+```bash
+bl-debater respond <name> --as <your-role> --template
+```
+
+This will:
+1. Open your `$EDITOR` with a pre-filled template
+2. Include the correct round number and headers
+3. Validate the response format when you save
+4. Automatically append to the debate file
+
+If you just want to see the template without opening an editor:
+
+```bash
+bl-debater respond <name> --as <your-role>
+```
+
+### Manual Response (Alternative)
+
+You can also manually edit the debate file. Here are the formats:
 
 ### Round 1 (Opening)
 
@@ -164,6 +211,7 @@ bl-debater wait <name> --as <your-role>
 ```
 
 This blocks until it's your turn again or the debate completes.
+By default, `wait` times out after 60 seconds; pass `--timeout <seconds>` to wait longer.
 
 ## Markers Reference
 
@@ -230,6 +278,137 @@ bl-debater wait auth
 [Debate Complete!]                  [Debate Complete!]
 ```
 
+## Exporting Results
+
+Once a debate is complete (`[DEBATE_COMPLETE]`), export the synthesis:
+
+```bash
+# For GitHub PR comments
+bl-debater export <name> --format github-comment
+
+# For raw markdown
+bl-debater export <name> --format markdown
+
+# For automation/JSON
+bl-debater export <name> --format json
+
+# Save to file
+bl-debater export <name> --format github-comment -o REVIEW.md
+```
+
+The export extracts the final synthesis section and formats it appropriately.
+
+## Roles
+
+Roles define the persona and expertise each participant brings to a debate. **Roles must be defined** - you cannot use arbitrary role names without a definition.
+
+### List Available Roles
+
+```bash
+bl-debater roles
+```
+
+### Bundled Roles
+
+bl-debater comes with predefined roles for common debates:
+
+| Role | Focus |
+|------|-------|
+| `architect` | System design, patterns, scalability |
+| `security` | OWASP, authentication, threat modeling |
+| `performance` | Speed, efficiency, optimization |
+| `frontend` | UI/UX, accessibility, responsiveness |
+| `backend` | APIs, databases, server-side logic |
+| `mobile` | iOS/Android, cross-platform, touch UX |
+| `qa` | Testing strategies, coverage, quality |
+| `reviewer` | Code quality, best practices, maintainability |
+| `analyzer` | Root cause analysis, debugging, investigation |
+
+### Role Definition Locations
+
+Roles are loaded from (in order of priority):
+1. `./roles/` - Project-specific roles
+2. `~/.bl-debater/roles/` - User global roles (persistent across projects)
+3. Package bundled roles
+
+### Creating New Roles
+
+#### Markdown Format (Recommended)
+
+Create `~/.bl-debater/roles/my-role.md`:
+
+```markdown
+# My Role
+
+Short description of this role's focus.
+
+## Expertise
+- Area of expertise 1
+- Area of expertise 2
+- Area of expertise 3
+
+## Debate Style
+- How this role approaches arguments
+- What they prioritize
+- How they evaluate proposals
+
+## Key Principles
+- Core belief 1
+- Core belief 2
+- Core belief 3
+```
+
+#### YAML Format (Alternative)
+
+Create `~/.bl-debater/roles/my-role.yaml`:
+
+```yaml
+name: my-role
+description: Short description of this role's focus
+
+expertise:
+  - Area of expertise 1
+  - Area of expertise 2
+  - Area of expertise 3
+
+evaluation_criteria:
+  - How do they judge proposals?
+  - What standards do they apply?
+
+style: Concise description of debate approach
+```
+
+### Example: Creating a Devil's Advocate Role
+
+```bash
+cat > ~/.bl-debater/roles/devils-advocate.md << 'EOF'
+# Devil's Advocate
+
+Stress-tester of ideas, finder of flaws, and challenger of assumptions.
+
+## Expertise
+- Critical thinking and logic
+- Risk assessment
+- Edge case identification
+
+## Debate Style
+- Questions every assumption
+- Proposes worst-case scenarios
+- Steelmans opposing views before critiquing
+
+## Key Principles
+- Good ideas survive scrutiny
+- Uncomfortable questions prevent costly mistakes
+- Disagreement is not disloyalty
+EOF
+```
+
+Then use it:
+
+```bash
+bl-debater start feature-review -p "Should we add caching?" --as devils-advocate --vs architect
+```
+
 ## Troubleshooting
 
 **"Debate not found"** - Check the name matches exactly (case-sensitive)
@@ -239,3 +418,5 @@ bl-debater wait auth
 **Timeout** - Increase with `--timeout 900` (15 minutes)
 
 **Stuck waiting** - Your opponent may not have written their response yet. Check the debate file directly.
+
+**"Not your turn"** - Wait for your `[WAITING_<ROLE>]` marker to appear in the file
