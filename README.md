@@ -124,15 +124,15 @@ Confirmed.
 ## Installation
 
 ```bash
-pip install git+https://github.com/beyond-logic-labs/bl-agent-debater.git
+pip install bl-agent-debater
 ```
 
-Or clone and run directly:
+Or install from source:
 
 ```bash
 git clone https://github.com/beyond-logic-labs/bl-agent-debater.git
 cd bl-agent-debater
-./bl-debater --help
+pip install -e .
 ```
 
 ## Commands
