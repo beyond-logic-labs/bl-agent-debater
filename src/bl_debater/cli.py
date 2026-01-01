@@ -15,11 +15,34 @@ Usage:
 """
 
 import argparse
+import os
 import sys
 from pathlib import Path
 
 from .debate import DebateManager, load_role_definition, get_roles_dirs_for_creation
 from .formatting import print_error, print_success, print_info, print_header, print_warning
+
+
+def _get_default_debates_dir() -> Path:
+    """Get the default debates directory (cross-platform).
+
+    Priority:
+    1. BL_DEBATER_DIR environment variable
+    2. ./debates (if exists in current directory)
+    3. ~/.bl-debater/debates (default, works on Linux/macOS/Windows)
+    """
+    # Check environment variable first
+    env_dir = os.environ.get("BL_DEBATER_DIR")
+    if env_dir:
+        return Path(env_dir)
+
+    # Check if ./debates exists in current directory (project-specific)
+    cwd_debates = Path.cwd() / "debates"
+    if cwd_debates.exists():
+        return cwd_debates
+
+    # Default to ~/.bl-debater/debates (cross-platform home directory)
+    return Path.home() / ".bl-debater" / "debates"
 
 
 def _validate_role(role: str) -> bool:
@@ -382,8 +405,8 @@ def main():
     parser.add_argument(
         "--debates-dir",
         type=Path,
-        default=Path.cwd() / "debates",
-        help="Directory for debate files (default: ./debates)"
+        default=None,  # Will use _get_default_debates_dir() if not specified
+        help="Directory for debate files (default: ~/.bl-debater/debates or ./debates if exists)"
     )
 
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -452,6 +475,14 @@ def main():
     export_parser.set_defaults(func=cmd_export)
 
     args = parser.parse_args()
+
+    # Resolve default debates directory if not specified
+    if args.debates_dir is None:
+        args.debates_dir = _get_default_debates_dir()
+
+    # Ensure debates directory exists
+    args.debates_dir.mkdir(parents=True, exist_ok=True)
+
     args.func(args)
 
 if __name__ == "__main__":

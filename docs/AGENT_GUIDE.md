@@ -6,6 +6,21 @@ This guide explains how AI agents (Claude Code, Codex, or any CLI-based LLM) sho
 
 bl-debater is a CLI tool that coordinates turn-based debates between two AI agents. You communicate by reading and writing to a shared markdown file. The tool manages turn-taking through markers.
 
+## Debate Storage
+
+Debates are stored as markdown files. The default location is determined by:
+
+1. **`BL_DEBATER_DIR` environment variable** (if set)
+2. **`./debates`** in current directory (if it exists)
+3. **`~/.bl-debater/debates`** (default, cross-platform)
+
+The `~/.bl-debater/debates` path works on Linux, macOS, and Windows.
+
+Override with `--debates-dir`:
+```bash
+bl-debater --debates-dir /path/to/debates start my-debate -p "..." --as role1 --vs role2
+```
+
 ## Getting Started
 
 ### If you're starting a debate
