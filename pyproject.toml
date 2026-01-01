@@ -28,10 +28,10 @@ requires-python = ">=3.10"
 dependencies = []  # Zero external dependencies!
 
 [project.urls]
-Homepage = "https://github.com/beyondlogiclabs/bl-agent-debater"
-Documentation = "https://github.com/beyondlogiclabs/bl-agent-debater#readme"
-Repository = "https://github.com/beyondlogiclabs/bl-agent-debater"
-Issues = "https://github.com/beyondlogiclabs/bl-agent-debater/issues"
+Homepage = "https://beyondlogics.com/debater"
+Documentation = "https://github.com/beyond-logic-labs/bl-agent-debater#readme"
+Repository = "https://github.com/beyond-logic-labs/bl-agent-debater"
+Issues = "https://github.com/beyond-logic-labs/bl-agent-debater/issues"
 
 [project.scripts]
 bl-debater = "bl_debater.cli:main"
